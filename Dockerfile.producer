@@ -1,0 +1,20 @@
+# Use an official Python runtime as a parent image
+FROM python:3.9-slim
+
+USER root
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy only the necessary file
+COPY kafka_producer.py /app/
+
+# Install required packages
+RUN python3 -m pip install --no-cache-dir --user kafka-python faker && \
+    chmod 755 /app/kafka_producer.py
+
+# Set Python path to include user-installed packages
+ENV PYTHONPATH="${PYTHONPATH}:/root/.local/lib/python3.9/site-packages"
+
+# Run kafka_producer.py when the container launches
+CMD ["python", "kafka_producer.py"]

@@ -1,0 +1,25 @@
+# Dockerfile.spark-consumer
+FROM apache/spark-py:v3.4.0
+
+USER root
+
+# Instala dependências adicionais
+RUN pip install --no-cache-dir \
+    kafka-python==2.0.2
+
+# Cria diretórios necessários
+RUN mkdir -p /app /tmp/spark-checkpoint && \
+    chmod -R 777 /tmp/spark-checkpoint
+
+# Copia o script do consumer
+COPY kafka_consumer_spark.py /app/
+
+WORKDIR /app
+
+CMD ["/opt/spark/bin/spark-submit", \
+     "--master", "local[*]", \
+     "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0,org.postgresql:postgresql:42.7.1", \
+     "--conf", "spark.sql.streaming.checkpointLocation=/tmp/spark-checkpoint", \
+     "--conf", "spark.driver.memory=2g", \
+     "--conf", "spark.executor.memory=2g", \
+     "/app/kafka_consumer_spark.py"]
