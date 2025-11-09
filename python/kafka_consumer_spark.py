@@ -83,7 +83,7 @@ def process_sensor_data(df):
         .withColumn("high_alert", 
                    when(col("value") > col("max_value") * 0.9, True).otherwise(False)) \
         .withColumn("low_alert", 
-                   when(col("value") < col("min_value") * 1.1, True).otherwise(False))
+                   when(col("value") < col("min_value") * 1.1, True).otherwise(False))  # Analisar regra para números negativos
     
     # Normaliza valores (0-1)
     normalized_df = alert_df \

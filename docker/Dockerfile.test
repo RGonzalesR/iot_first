@@ -1,0 +1,17 @@
+# docker/Dockerfile.test
+# Imagem oficial do Apache com Spark + Python já configurados
+FROM apache/spark-py:v3.4.0
+
+ENV PYSPARK_PYTHON=python3
+ENV PYSPARK_DRIVER_PYTHON=python3
+ENV SPARK_NO_DAEMONIZE=true
+
+# Instala pytest como root (ok para container de testes)
+USER root
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install --no-cache-dir pytest pyspark==3.4.0
+
+WORKDIR /app
+COPY . .
+
+CMD ["pytest", "-q", "tests"]

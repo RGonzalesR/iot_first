@@ -1,0 +1,8 @@
+# Ignorar volumes pesados
+volumes/
+.venv/
+__pycache__/
+*.pyc
+*.log
+*.csv
+*.ipynb
