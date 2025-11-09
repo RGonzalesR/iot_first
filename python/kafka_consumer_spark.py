@@ -1,12 +1,24 @@
-# kafka_consumer_spark.py
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-from pyspark.sql.window import Window
+import logging
 import os
+import pyspark.sql.functions as f
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
 
+# =========================
+# Configuração de logging
+# =========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# ==================================================
+# Funções auxiliares, constantes e schema
+# ==================================================
 def _read_secret(path="/run/secrets/pg_password"):
-    """Lê a senha do PostgreSQL a partir de um Docker Secret (ou variável de ambiente fallback)."""
+    """Lê a senha do PostgreSQL a partir de um Docker Secret. Se estiver em ambiente de testes, retorna uma senha genérica."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -15,7 +27,7 @@ def _read_secret(path="/run/secrets/pg_password"):
             return "default_test_password"
         return None
 
-# Configurações com default unicamente paara situações de teste unitário
+# Configurações com default unicamente para situações de teste unitário
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:1111")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "iot")
 
@@ -25,7 +37,6 @@ POSTGRES_DB   = os.getenv("POSTGRES_DB", "teste_db")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "teste_user")
 POSTGRES_PASSWORD = _read_secret()
 CHECKPOINT_DIR = '/tmp/spark-checkpoint'
-
 
 if not POSTGRES_PASSWORD:
     raise RuntimeError("Nenhuma senha encontrada — defina POSTGRES_PASSWORD ou o secret Docker.")
@@ -49,6 +60,9 @@ sensor_schema = StructType([
     StructField("installation_date", StringType(), True)
 ])
 
+# =========================
+# Funções principais
+# =========================
 def create_spark_session():
     """Cria sessão Spark com configurações otimizadas para versão 3.4.0."""
     return SparkSession.builder \
@@ -78,86 +92,87 @@ def read_kafka_stream(spark):
 
 def process_sensor_data(df):
     """Processa e transforma dados dos sensores."""
-    
-    # Parse JSON e converte timestamp
-    parsed_df = df.select(
-        from_json(col("value").cast("string"), sensor_schema).alias("data"),
-        col("timestamp").alias("kafka_timestamp")
-    ).select("data.*", "kafka_timestamp")
-    
-    # Converte timestamps para formato correto
-    processed_df = parsed_df \
-        .withColumn("timestamp", to_timestamp(col("timestamp"))) \
-        .withColumn("kafka_timestamp", to_timestamp(col("kafka_timestamp"))) \
-        .withColumn("processing_time", current_timestamp())
-    
-    # Filtragens
-    filtered_df = processed_df \
-        .filter(col("status") == "active") \
-        .filter(col("value").isNotNull()) \
-        .filter(col("value") >= col("min_value")) \
-        .filter(col("value") <= col("max_value"))
-    
-    # Adiciona flags de alerta
-    alert_df = filtered_df \
-        .withColumn("high_alert", 
-                   when(col("value") > col("max_value") * 0.9, True).otherwise(False)) \
-        .withColumn("low_alert", 
-                   when(col("value") < col("min_value") * 1.1, True).otherwise(False))  # Analisar regra para números negativos
-    
-    # Normaliza valores (0-1)
-    normalized_df = alert_df \
-        .withColumn("normalized_value", 
-                   (col("value") - col("min_value")) / (col("max_value") - col("min_value")))
-    
-    return normalized_df
+    parsed_filtered_df = (
+        df.select(
+            f.from_json(f.col("value").cast("string"), sensor_schema).alias("data"),
+            f.col("timestamp").alias("kafka_timestamp")
+        )   
+        .select("data.*", "kafka_timestamp")
+        .where(
+            (f.col("status") == "active")
+            & (f.col("value").isNotNull())
+            & (f.col("value") >= f.col("min_value"))
+            & (f.col("value") <= f.col("max_value"))
+        )
+    )
+
+    processed_df = (
+        parsed_filtered_df
+        .select(
+            f.col("sensor_id"),
+            f.col("sensor_type"),
+            f.col("value"),
+            f.col("status"),
+            f.col("location"),
+            f.col("manufacturer"),
+            f.col("model"),
+            f.col("unit"),
+            f.col("min_value"),
+            f.col("max_value"),
+            f.to_timestamp(f.col("timestamp")).alias("timestamp"),
+            f.to_timestamp(f.col("kafka_timestamp")).alias("kafka_timestamp"),
+            f.current_timestamp().alias("processing_time"),
+            ((f.col("value") - f.col("min_value")) / (f.col("max_value") - f.col("min_value"))).alias("normalized_value")
+        )
+        .withColumn("low_alert", f.col("normalized_value") < 0.1)
+        .withColumn("high_alert", f.col("normalized_value") > 0.9)
+    )
+
+    return processed_df
 
 def create_aggregations(df):
     """Cria agregações por janela de tempo."""
-    
-    # Agregações por sensor e janela de 1 minuto
-    agg_df = df \
-        .withWatermark("timestamp", "2 minutes") \
+    agg_df = (
+        df.withWatermark("timestamp", "2 minutes") \
         .groupBy(
-            window(col("timestamp"), "1 minute"),
-            col("sensor_id"),
-            col("sensor_type"),
-            col("location"),
-            col("manufacturer")
-        ) \
-        .agg(
-            avg("value").alias("avg_value"),
-            min("value").alias("min_value_reading"),
-            max("value").alias("max_value_reading"),
-            stddev("value").alias("stddev_value"),
-            count("*").alias("reading_count"),
-            max("normalized_value").alias("max_normalized"),
-            sum(when(col("high_alert"), 1).otherwise(0)).alias("high_alert_count"),
-            sum(when(col("low_alert"), 1).otherwise(0)).alias("low_alert_count")
-        ) \
-        .select(
-            col("window.start").alias("window_start"),
-            col("window.end").alias("window_end"),
-            col("sensor_id"),
-            col("sensor_type"),
-            col("location"),
-            col("manufacturer"),
-            col("avg_value"),
-            col("min_value_reading"),
-            col("max_value_reading"),
-            col("stddev_value"),
-            col("reading_count"),
-            col("max_normalized"),
-            col("high_alert_count"),
-            col("low_alert_count"),
-            current_timestamp().alias("aggregation_time")
+            f.window(f.col("timestamp"), "1 minute"),
+            f.col("sensor_id"),
+            f.col("sensor_type"),
+            f.col("location"),
+            f.col("manufacturer")
         )
-    
+        .agg(
+            f.avg("value").alias("avg_value"),
+            f.min("value").alias("min_value_reading"),
+            f.max("value").alias("max_value_reading"),
+            f.stddev("value").alias("stddev_value"),
+            f.count("*").alias("reading_count"),
+            f.max("normalized_value").alias("max_normalized"),
+            f.sum(f.when(f.col("high_alert"), 1).otherwise(0)).alias("high_alert_count"),
+            f.sum(f.when(f.col("low_alert"), 1).otherwise(0)).alias("low_alert_count")
+        )
+        .select(
+            f.col("window.start").alias("window_start"),
+            f.col("window.end").alias("window_end"),
+            f.col("sensor_id"),
+            f.col("sensor_type"),
+            f.col("location"),
+            f.col("manufacturer"),
+            f.col("avg_value"),
+            f.col("min_value_reading"),
+            f.col("max_value_reading"),
+            f.col("stddev_value"),
+            f.col("reading_count"),
+            f.col("max_normalized"),
+            f.col("high_alert_count"),
+            f.col("low_alert_count"),
+            f.current_timestamp().alias("aggregation_time")
+        )
+    )
     return agg_df
 
 def write_to_postgres(df, table_name, mode="append"):
     """Escreve dados no PostgreSQL com tratamento de erros."""
-    
     def write_batch(batch_df, batch_id):
         try:
             batch_df.write \
@@ -171,78 +186,76 @@ def write_to_postgres(df, table_name, mode="append"):
                 .option("isolationLevel", "READ_COMMITTED") \
                 .mode(mode) \
                 .save()
-            print(f"✓ Batch {batch_id} gravado com sucesso em {table_name}")
+            logger.info(f"--> Batch {batch_id} gravado com sucesso em {table_name}")
         except Exception as e:
-            print(f"✗ Erro ao gravar batch {batch_id} em {table_name}: {str(e)}")
+            logger.info("=" * 60)
+            logger.info("=" * 60)
+            logger.error(f"Erro ao gravar batch {batch_id} em {table_name}: {str(e)}", exc_info=True)
             raise
-    
     return write_batch
 
 def main():
     """Função principal."""
-    print("=" * 60)
-    print("IoT Sensor Consumer - Apache Spark 3.4.0")
-    print("=" * 60)
-    
-    # Cria sessão Spark
+    logger.info("=" * 60)
+    logger.info("IoT Sensor Consumer")
+    logger.info("=" * 60)
+
     spark = create_spark_session()
     spark.sparkContext.setLogLevel("WARN")
-    
-    print(f"✓ Spark Session criada - Versão: {spark.version}")
-    
-    # Lê stream do Kafka
-    print(f"✓ Conectando ao Kafka: {KAFKA_BROKER}")
+    logger.info(f"--> Spark Session criada - Versão: {spark.version}")
+
+    logger.info(f"--> Conectando ao Kafka: {KAFKA_BROKER}")
     kafka_df = read_kafka_stream(spark)
-    
-    # Processa dados brutos
-    print(f"✓ Processando dados do tópico: {KAFKA_TOPIC}")
+
+    logger.info(f"--> Processando dados do tópico: {KAFKA_TOPIC}")
     processed_df = process_sensor_data(kafka_df)
-    
-    # Stream 1: Dados brutos processados
-    print("✓ Iniciando stream de dados brutos...")
-    raw_query = processed_df \
+
+    logger.info("--> Iniciando stream de dados brutos...")
+    raw_query = (
+        processed_df
         .select(
-            "timestamp",
-            "sensor_id",
-            "sensor_type",
-            "value",
-            "normalized_value",
-            "status",
-            "location",
-            "manufacturer",
-            "model",
-            "unit",
-            "high_alert",
-            "low_alert",
-            "processing_time"
-        ) \
-        .writeStream \
-        .foreachBatch(write_to_postgres(processed_df, "sensor_readings")) \
-        .outputMode("append") \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/raw") \
-        .trigger(processingTime='10 seconds') \
+            f.col("timestamp"),
+            f.col("sensor_id"),
+            f.col("sensor_type"),
+            f.col("value"),
+            f.col("normalized_value"),
+            f.col("status"),
+            f.col("location"),
+            f.col("manufacturer"),
+            f.col("model"),
+            f.col("unit"),
+            f.col("high_alert"),
+            f.col("low_alert"),
+            f.col("processing_time")
+        )
+        .writeStream
+        .foreachBatch(write_to_postgres(processed_df, "sensor_readings"))
+        .outputMode("append")
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/raw")
+        .trigger(processingTime='10 seconds')
         .start()
-    
-    # Stream 2: Agregações
-    print("✓ Iniciando stream de agregações...")
+    )
+
+    logger.info("--> Iniciando stream de agregações...")
     agg_df = create_aggregations(processed_df)
-    
-    agg_query = agg_df \
-        .writeStream \
-        .foreachBatch(write_to_postgres(agg_df, "sensor_aggregations")) \
-        .outputMode("append") \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/agg") \
-        .trigger(processingTime='30 seconds') \
+
+    agg_query = (
+        agg_df
+        .writeStream
+        .foreachBatch(write_to_postgres(agg_df, "sensor_aggregations"))
+        .outputMode("append")
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/agg")
+        .trigger(processingTime='30 seconds')
         .start()
-    
-    print("=" * 60)
-    print("✓ Streams ativos e processando dados!")
-    print(f"  → Dados brutos: sensor_readings (a cada 10s)")
-    print(f"  → Agregações: sensor_aggregations (a cada 30s)")
-    print(f"  → Checkpoint: {CHECKPOINT_DIR}")
-    print("=" * 60)
-    
-    # Aguarda término
+    )
+
+    logger.info("=" * 60)
+    logger.info("Streams ativos e processando dados!")
+    logger.info(f"  → Dados brutos: sensor_readings (a cada 10s)")
+    logger.info(f"  → Agregações: sensor_aggregations (a cada 30s)")
+    logger.info(f"  → Checkpoint: {CHECKPOINT_DIR}")
+    logger.info("=" * 60)
+
     spark.streams.awaitAnyTermination()
 
 if __name__ == "__main__":

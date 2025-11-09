@@ -53,13 +53,13 @@ def test_process_sensor_data_filters_and_flags(spark):
     # parâmetros do sensor temperature
     mn, mx = -10.0, 40.0
     rows.extend([
-        rec("temperature", "Celsius", mn, mx, mx * 0.95, sid="t-1"),      # high_alert True
-        rec("temperature", "Celsius", mn, mx, mn * 1.05, sid="t-2"),      # low_alert True (>= min e < min*1.1)
-        rec("temperature", "Celsius", mn, mx, (mn + mx) / 2.0, sid="t-3") # sem alertas
+        rec("temperature", "Celsius", mn, mx, mx - 1, sid="t-1"),      # high_alert True
+        rec("temperature", "Celsius", mn, mx, mn + 1, sid="t-2"),      # low_alert True (>= min e < min*1.1)
+        rec("temperature", "Celsius", mn, mx, (mx + mn) / 2, sid="t-3")        # sem alertas
     ])
 
     # Leituras que devem ser filtradas:
-    rows.append(rec("temperature", "Celsius", mn, mx, mx + 1.0, sid="t-4"))      # fora do range -> some
+    rows.append(rec("temperature", "Celsius", mn, mx, mx + 1.0, sid="t-4"))                               # fora do range -> some
     rows.append(rec("temperature", "Celsius", mn, mx, (mn + mx) / 2.0, status="maintenance", sid="t-5"))  # status != active -> some
 
     df_kafka_like = _wrap_as_kafka_source_df(spark, rows)

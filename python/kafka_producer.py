@@ -1,3 +1,4 @@
+import logging
 from kafka import KafkaProducer
 from faker import Faker
 import random
@@ -5,17 +6,24 @@ import time
 import json
 from datetime import datetime
 
-# Kafka configuration
+# =========================
+# Configuração de logging
+# =========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# =========================
+# Constantes e parâmetros
+# =========================
 KAFKA_BROKER = 'kafka:9092'
 KAFKA_TOPIC = 'iot_sensor_data'
 
-# Initialize Faker with pt_BR locale for Brazilian locations
 fake = Faker('pt_BR')
 
-# Global variable to store the latest sensor data
-latest_sensor_data = []
-
-# Define sensor types and their fixed attributes
 SENSOR_TYPES = {
     'temperature': {
         'unit': 'Celsius',
@@ -49,48 +57,66 @@ SENSOR_TYPES = {
     }
 }
 
+# =========================
+# Funções principais
+# =========================
 def generate_sensor_data():
-    """Generate simulated sensor data for all sensor types."""
+    """Geração de dados simulados para todos os tipos de sensores."""
     timestamp = datetime.now().isoformat()
-    
     sensor_data = []
+
     for sensor_type, attributes in SENSOR_TYPES.items():
         reading = {
             'timestamp': timestamp,
             'sensor_type': sensor_type,
             'value': round(random.uniform(attributes['min_value'], attributes['max_value']), 2),
-            'status': random.choice(['active', 'active', 'active', 'maintenance']),  # 75% chance of being active
-            'maintenance_date': fake.date_this_year().isoformat() if random.random() < 0.1 else None,  # 10% chance of having maintenance
+            'status': random.choice(['active', 'active', 'active', 'maintenance']),                     # 75% ativo
+            'maintenance_date': fake.date_this_year().isoformat() if random.random() < 0.1 else None,   # 10% chance de já ter ocorrido manutenção
             **attributes
         }
         sensor_data.append(reading)
-    
+
     return sensor_data
 
+
 def json_serializer(data):
+    """Serializa dados para JSON."""
     return json.dumps(data).encode('utf-8')
 
+
 def simulate_iot_sensors():
-    """Simulate continuous IoT sensor data generation and sending to Kafka."""
+    """Simula continuamente sensores IoT e envia dados para o Kafka."""
     producer = KafkaProducer(
         bootstrap_servers=[KAFKA_BROKER],
         value_serializer=json_serializer
     )
 
-    print(f"Starting IoT sensor simulation. Sending data to Kafka topic: {KAFKA_TOPIC}")
+    logger.info("=" * 60)
+    logger.info("Iniciando simulação de dados de sensores IoT. Pressione CTRL+C para finalizar.")
+    logger.info(f"Enviando dados para o tópico Kafka: {KAFKA_TOPIC}")
+    logger.info("=" * 60)
+
     try:
         while True:
             sensor_data = generate_sensor_data()
             for reading in sensor_data:
                 producer.send(KAFKA_TOPIC, reading)
-                print(f"Sent: {reading['sensor_type']} data to Kafka")
+                logger.info(f"--> Enviado dado para o Kafka: {reading['sensor_type']} | valor={reading['value']}{reading['unit']}")
             producer.flush()
-            time.sleep(2)  # Generate new readings every 2 seconds
+            time.sleep(2)
     except KeyboardInterrupt:
-        print("\nSimulation stopped by user")
+        logger.info("=" * 60)
+        logger.info("Simulação encerrada pelo usuário.")
+        logger.info("=" * 60)
+    except Exception as e:
+        logger.error("Erro inesperado na simulação IoT.", exc_info=True)
     finally:
         producer.close()
+        logger.info("Conexão com Kafka encerrada.")
+
 
 if __name__ == "__main__":
-    print("Starting IoT Sensor Simulator...")
+    logger.info("=" * 60)
+    logger.info("Iniciando simulador IoT...")
+    logger.info("=" * 60)
     simulate_iot_sensors()
