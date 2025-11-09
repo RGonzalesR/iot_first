@@ -59,7 +59,10 @@ log.txt
 
 # Ignore Docker volumes (arquivos diretos)
 volumes/*
-!volumes/*/
+
+# Mantém as pastas
+!volumes/.gitkeep
+!volumes/**/.gitkeep
 
 # ------------------------------------------
 # Spark / Hadoop
