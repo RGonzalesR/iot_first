@@ -1,94 +1,71 @@
-# docker-compose.yml (COMPLETO)
-version: '3.8'
-
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    hostname: zookeeper
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
     volumes:
-      - zookeeper-data:/var/lib/zookeeper/data
-      - zookeeper-logs:/var/lib/zookeeper/log
-    networks:
-      - iot-network
+      - ./volumes/zookeeper/data:/var/lib/zookeeper/data
+      - ./volumes/zookeeper/log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -E 'Mode:' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    hostname: kafka
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
-      - kafka-data:/var/lib/kafka/data
-    networks:
-      - iot-network
-    restart: unless-stopped
+      - ./volumes/kafka/data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 1>/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: postgres
     environment:
-      POSTGRES_DB: iot_db
       POSTGRES_USER: iot_user
       POSTGRES_PASSWORD: iot_password
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: iot_db
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - iot-network
-    restart: unless-stopped
+      - ./volumes/postgres/data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U iot_user -d iot_db"]
       interval: 10s
       timeout: 5s
-      retries: 5
-
-  # PRODUCER - Gera dados dos sensores
-  kafka-producer:
-    build:
-      context: .
-      dockerfile: Dockerfile.producer
-    container_name: kafka-producer
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER: 'kafka:9092'
-      KAFKA_TOPIC: 'iot_sensor_data'
-    networks:
-      - iot-network
+      retries: 10
     restart: unless-stopped
 
-  # CONSUMER - Processa dados com PySpark
   spark-consumer:
     build:
       context: .
-      dockerfile: Dockerfile.spark-consumer
+      dockerfile: docker/Dockerfile.spark-consumer
     container_name: spark-consumer
     depends_on:
       kafka:
@@ -96,31 +73,33 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      KAFKA_BROKER: 'kafka:9092'
-      KAFKA_TOPIC: 'iot_sensor_data'
-      POSTGRES_URL: 'jdbc:postgresql://postgres:5432/iot_db'
-      POSTGRES_USER: 'iot_user'
-      POSTGRES_PASSWORD: 'iot_password'
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: iot_sensor_data
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/iot_db
+      POSTGRES_USER: iot_user
+      POSTGRES_PASSWORD: iot_password
+      CHECKPOINT_DIR: /tmp/spark-checkpoint
     volumes:
-      - spark-checkpoint:/tmp/spark-checkpoint
-      - ./kafka_consumer_spark.py:/app/kafka_consumer_spark.py
-    networks:
-      - iot-network
+      - ./python/kafka_consumer_spark.py:/app/kafka_consumer_spark.py:ro
+      - ./volumes/spark/checkpoints:/tmp/spark-checkpoint
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
 
-volumes:
-  zookeeper-data:
-  zookeeper-logs:
-  kafka-data:
-  postgres-data:
-  spark-checkpoint:
+  producer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.producer
+    container_name: kafka-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: iot_sensor_data
+    volumes:
+      - ./python/kafka_producer.py:/app/kafka_producer.py:ro
+    command: ["python", "/app/kafka_producer.py"]
+    restart: unless-stopped
 
 networks:
-  iot-network:
-    driver: bridge
+  default:
+    name: iot_first_net
