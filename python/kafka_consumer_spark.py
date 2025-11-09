@@ -3,14 +3,34 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
+import os
 
-# Configurações
-KAFKA_BROKER = 'kafka:9092'
-KAFKA_TOPIC = 'iot_sensor_data'
-POSTGRES_URL = 'jdbc:postgresql://postgres:5432/iot_db'
-POSTGRES_USER = 'iot_user'
-POSTGRES_PASSWORD = 'iot_password'
+def _read_secret(path="/run/secrets/pg_password"):
+    """Lê a senha do PostgreSQL a partir de um Docker Secret (ou variável de ambiente fallback)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        if os.getenv("IOT_FIRST_TEST_MODE") == "1":
+            return "default_test_password"
+        return None
+
+# Configurações com default unicamente paara situações de teste unitário
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:1111")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "iot")
+
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "teste")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "4242")
+POSTGRES_DB   = os.getenv("POSTGRES_DB", "teste_db")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "teste_user")
+POSTGRES_PASSWORD = _read_secret()
 CHECKPOINT_DIR = '/tmp/spark-checkpoint'
+
+
+if not POSTGRES_PASSWORD:
+    raise RuntimeError("Nenhuma senha encontrada — defina POSTGRES_PASSWORD ou o secret Docker.")
+
+POSTGRES_URL = f"jdbc:postgresql://{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 # Schema dos dados do sensor
 sensor_schema = StructType([

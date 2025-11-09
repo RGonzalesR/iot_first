@@ -1,5 +1,11 @@
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt
+
 services:
   tests:
+    environment:
+      - IOT_FIRST_TEST_MODE=1
     build:
       context: .
       dockerfile: docker/Dockerfile.test   # aquele Dockerfile.test que criamos
@@ -67,8 +73,10 @@ services:
         condition: service_completed_successfully
     environment:
       POSTGRES_USER: iot_user
-      POSTGRES_PASSWORD: iot_password
       POSTGRES_DB: iot_db
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    secrets:
+      - pg_password
     ports:
       - "5432:5432"
     volumes:
@@ -86,6 +94,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.spark-consumer
     container_name: spark-consumer
+    env_file:
+      - .env 
     depends_on:
       tests:
         condition: service_completed_successfully
@@ -98,8 +108,9 @@ services:
       KAFKA_TOPIC: iot_sensor_data
       POSTGRES_URL: jdbc:postgresql://postgres:5432/iot_db
       POSTGRES_USER: iot_user
-      POSTGRES_PASSWORD: iot_password
       CHECKPOINT_DIR: /tmp/spark-checkpoint
+    secrets:
+      - pg_password
     volumes:
       - ./python/kafka_consumer_spark.py:/app/kafka_consumer_spark.py:ro
       - ./volumes/spark/checkpoints:/tmp/spark-checkpoint
