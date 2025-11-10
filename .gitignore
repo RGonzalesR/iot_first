@@ -58,7 +58,7 @@ log.txt
 *.pid.lock
 
 # Ignore Docker volumes (arquivos diretos)
-volumes/*
+volumes/*/*/*
 
 # Mantém as pastas
 !volumes/.gitkeep
