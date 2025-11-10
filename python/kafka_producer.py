@@ -1,3 +1,4 @@
+import os
 import logging
 from kafka import KafkaProducer
 from faker import Faker
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 # =========================
 # Constantes e parâmetros
 # =========================
-KAFKA_BROKER = 'kafka:9092'
-KAFKA_TOPIC = 'iot_sensor_data'
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:1111")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "iot")
 
 fake = Faker('pt_BR')
 

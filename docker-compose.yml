@@ -8,12 +8,8 @@ services:
       - IOT_FIRST_TEST_MODE=1
     build:
       context: .
-      dockerfile: docker/Dockerfile.test   # aquele Dockerfile.test que criamos
+      dockerfile: docker/Dockerfile.test
     container_name: iot-first-tests
-    # por padrão o CMD do Dockerfile já roda "pytest -q tests"
-    # se quiser mais verboso, descomente:
-    # command: ["pytest", "-v", "tests"]
-    # não precisa de volumes/infra; os testes são unitários e não tocam Kafka/PG
     restart: "no"
 
   zookeeper:
@@ -121,6 +117,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.producer
     container_name: kafka-producer
+    env_file:
+      - .env 
     depends_on:
       tests:
         condition: service_completed_successfully
