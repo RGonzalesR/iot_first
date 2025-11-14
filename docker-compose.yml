@@ -110,6 +110,7 @@ services:
     volumes:
       - ./python/kafka_consumer_spark.py:/app/kafka_consumer_spark.py:ro
       - ./volumes/spark/checkpoints:/tmp/spark-checkpoint
+      - ./volumes/spark/logs:/app/volumes/spark/logs
     restart: unless-stopped
 
   producer:
@@ -129,6 +130,7 @@ services:
       KAFKA_TOPIC: iot_sensor_data
     volumes:
       - ./python/kafka_producer.py:/app/kafka_producer.py:ro
+      - ./volumes/kafka/logs:/app/volumes/kafka/logs
     command: ["python", "/app/kafka_producer.py"]
     restart: unless-stopped
 

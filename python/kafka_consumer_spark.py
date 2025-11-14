@@ -3,16 +3,9 @@ import os
 import pyspark.sql.functions as f
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
+from tools.logger_utils import setup_rotating_log
 
-# =========================
-# Configuração de logging
-# =========================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("consumer")
 
 # ==================================================
 # Funções auxiliares, constantes e schema
@@ -306,10 +299,6 @@ def write_to_postgres(df, table_name, mode="append"):
 
 def main():
     """Função principal."""
-    logger.info("=" * 60)
-    logger.info("IoT Sensor Consumer")
-    logger.info("=" * 60)
-
     spark = create_spark_session()
     spark.sparkContext.setLogLevel("WARN")
     logger.info(f"--> Spark Session criada - Versão: {spark.version}")
@@ -382,4 +371,13 @@ def main():
     spark.streams.awaitAnyTermination()
 
 if __name__ == "__main__":
+    logger = setup_rotating_log(
+        component="consumer",
+        default_dir="/app/volumes/spark/logs"
+    )
+    
+    logger.info("=" * 60)
+    logger.info("IoT Sensor Consumer")
+    logger.info("=" * 60)
+
     main()

@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir \
 RUN mkdir -p /app /tmp/spark-checkpoint && \
     chmod -R 777 /tmp/spark-checkpoint
 
-COPY python/kafka_consumer_spark.py /app/
+COPY python/ /app/
 
 WORKDIR /app
 

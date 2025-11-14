@@ -4,7 +4,7 @@ USER root
 
 WORKDIR /app
 
-COPY python/kafka_producer.py /app/
+COPY python/ /app/
 
 RUN python3 -m pip install --no-cache-dir --user kafka-python faker && \
     chmod 755 /app/kafka_producer.py

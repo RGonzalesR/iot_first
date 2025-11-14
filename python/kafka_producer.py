@@ -7,15 +7,9 @@ import time
 import json
 from datetime import datetime
 
-# =========================
-# Configuração de logging
-# =========================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+from tools.logger_utils import setup_rotating_log
+
+logger = logging.getLogger("producer")
 
 # =========================
 # Constantes e parâmetros
@@ -119,7 +113,13 @@ def simulate_iot_sensors():
 
 
 if __name__ == "__main__":
+    logger = setup_rotating_log(
+        component="producer",
+        default_dir="/app/volumes/kafka/logs"
+    )
+
     logger.info("=" * 60)
     logger.info("Iniciando simulador IoT...")
     logger.info("=" * 60)
+
     simulate_iot_sensors()

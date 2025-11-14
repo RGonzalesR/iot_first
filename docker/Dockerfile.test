@@ -14,4 +14,8 @@ RUN python3 -m pip install --upgrade pip && \
 WORKDIR /app
 COPY . .
 
+# Cria diretórios efêmeros para logs
+RUN mkdir -p /app/volumes/spark/logs
+RUN mkdir -p /app/volumes/kafka/logs
+
 CMD ["pytest", "-q", "tests"]
