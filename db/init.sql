@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS sensor_aggregations (
     UNIQUE(window_start, window_end, sensor_id)
 );
 
+-- Mensagens inválidas (Dead Letter Queue)
+CREATE TABLE IF NOT EXISTS sensor_errors (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    raw_value TEXT NOT NULL,
+    error_type TEXT,
+    error_message TEXT,
+    kafka_topic TEXT,
+    kafka_partition INT,
+    kafka_offset BIGINT,
+    kafka_timestamp TIMESTAMP
+);
+
 -- Índices para performance
 CREATE INDEX idx_sensor_readings_timestamp ON sensor_readings(timestamp);
 CREATE INDEX idx_sensor_readings_sensor_id ON sensor_readings(sensor_id);

@@ -70,7 +70,9 @@ def generate_sensor_data():
         reading = {
             'timestamp': timestamp,
             'sensor_type': sensor_type,
-            'value': round(random.uniform(attributes['min_value'], attributes['max_value']), 2),
+            'value': round(random.uniform(attributes['min_value'] - attributes['min_value'] * 0.2, 
+                                          attributes['max_value'] * 1.5), 
+                           2),
             'status': random.choice(['active', 'active', 'active', 'maintenance']),                     # 75% ativo
             'maintenance_date': fake.date_this_year().isoformat() if random.random() < 0.1 else None,   # 10% chance de já ter ocorrido manutenção
             **attributes

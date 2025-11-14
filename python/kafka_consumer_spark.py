@@ -90,19 +90,100 @@ def read_kafka_stream(spark):
         .option("kafka.request.timeout.ms", "40000") \
         .load()
 
-def process_sensor_data(df):
-    """Processa e transforma dados dos sensores."""
-    parsed_filtered_df = (
+def split_valid_invalid(df):
+    """
+    Separa mensagens válidas e inválidas.
+
+    Retorna:
+      - df_valid: linhas filtradas (status ativo, valor dentro do range)
+      - df_invalid: linhas rejeitadas, com motivo
+    """
+    # 1) Mantém o payload bruto + metadados do Kafka + struct `data`
+    base = (
         df.select(
+            f.col("value").cast("string").alias("raw_value"),
+            f.col("topic"),
+            f.col("partition"),
+            f.col("offset"),
+            f.col("timestamp").alias("kafka_timestamp"),
             f.from_json(f.col("value").cast("string"), sensor_schema).alias("data"),
-            f.col("timestamp").alias("kafka_timestamp")
-        )   
-        .select("data.*", "kafka_timestamp")
-        .where(
-            (f.col("status") == "active")
-            & (f.col("value").isNotNull())
-            & (f.col("value") >= f.col("min_value"))
-            & (f.col("value") <= f.col("max_value"))
+        )
+        .select(
+            "raw_value",
+            "topic",
+            "partition",
+            "offset",
+            "kafka_timestamp",
+            "data",      # mantém o struct inteiro
+            "data.*",    # explode em colunas planas
+        )
+    )
+
+    # Condição de "payload completamente vazio" => JSON parse error
+    json_error_condition = (
+        f.col("timestamp").isNull()
+        & f.col("sensor_id").isNull()
+        & f.col("sensor_type").isNull()
+        & f.col("value").isNull()
+        & f.col("status").isNull()
+    )
+
+    # Condição de "válido" (a mesma que você já usa hoje)
+    valid_condition = (
+        (f.col("status") == "active")
+        & (f.col("value").isNotNull())
+        & (f.col("value") >= f.col("min_value"))
+        & (f.col("value") <= f.col("max_value"))
+    )
+
+    # DataFrame com marcação de erro
+    with_error = (
+        base
+        .withColumn(
+            "error_type",
+            f.when(json_error_condition, f.lit("JSON_PARSE_ERROR"))
+             .when(f.col("status") != "active", f.lit("INACTIVE_SENSOR"))
+             .when(f.col("value").isNull(), f.lit("NULL_VALUE"))
+             .when(f.col("value") < f.col("min_value"), f.lit("BELOW_MIN"))
+             .when(f.col("value") > f.col("max_value"), f.lit("ABOVE_MAX"))
+             .otherwise(f.lit(None))
+        )
+        .withColumn(
+            "error_message",
+            f.when(json_error_condition, f.lit("Falha ao fazer parse do JSON"))
+             .when(f.col("status") != "active", f.lit("Sensor inativo"))
+             .when(f.col("value").isNull(), f.lit("Valor nulo"))
+             .when(f.col("value") < f.col("min_value"), f.lit("Valor abaixo do mínimo"))
+             .when(f.col("value") > f.col("max_value"), f.lit("Valor acima do máximo"))
+             .otherwise(f.lit(None))
+        )
+    )
+
+    # Válidos: condição de válido e sem erro
+    df_valid = with_error.where(valid_condition & f.col("error_type").isNull())
+
+    # Inválidos (DLQ): qualquer linha com error_type definido
+    df_invalid = with_error.where(f.col("error_type").isNotNull())
+
+    return df_valid, df_invalid
+
+def process_sensor_data(valid_df):
+    """Processa e transforma dados dos sensores (somente válidos)."""
+    parsed_filtered_df = (
+        valid_df
+        .select(
+            f.col("sensor_id"),
+            f.col("sensor_type"),
+            f.col("value"),
+            f.col("status"),
+            f.col("location"),
+            f.col("manufacturer"),
+            f.col("model"),
+            f.col("unit"),
+            f.col("min_value"),
+            f.col("max_value"),
+            f.col("timestamp"),
+            f.col("kafka_timestamp"),
         )
     )
 
@@ -122,13 +203,42 @@ def process_sensor_data(df):
             f.to_timestamp(f.col("timestamp")).alias("timestamp"),
             f.to_timestamp(f.col("kafka_timestamp")).alias("kafka_timestamp"),
             f.current_timestamp().alias("processing_time"),
-            ((f.col("value") - f.col("min_value")) / (f.col("max_value") - f.col("min_value"))).alias("normalized_value")
+            (
+                (f.col("value") - f.col("min_value"))
+                / (f.col("max_value") - f.col("min_value"))
+            ).alias("normalized_value"),
         )
         .withColumn("low_alert", f.col("normalized_value") < 0.1)
         .withColumn("high_alert", f.col("normalized_value") > 0.9)
     )
 
     return processed_df
+
+def write_dlq_to_postgres(df, batch_id):
+    """Grava mensagens inválidas na tabela sensor_errors."""
+    if df.rdd.isEmpty():
+        return
+
+    (
+        df.select(
+            f.col("raw_value"),
+            f.col("error_type"),
+            f.col("error_message"),
+            f.col("topic").alias("kafka_topic"),
+            f.col("partition").alias("kafka_partition"),
+            f.col("offset").alias("kafka_offset"),
+            f.to_timestamp("kafka_timestamp").alias("kafka_timestamp"),
+        )
+        .write
+        .format("jdbc")
+        .option("url", POSTGRES_URL)
+        .option("dbtable", "sensor_errors")
+        .option("user", POSTGRES_USER)
+        .option("password", POSTGRES_PASSWORD)
+        .option("driver", "org.postgresql.Driver")
+        .mode("append")
+        .save()
+    )
 
 def create_aggregations(df):
     """Cria agregações por janela de tempo."""
@@ -207,8 +317,11 @@ def main():
     logger.info(f"--> Conectando ao Kafka: {KAFKA_BROKER}")
     kafka_df = read_kafka_stream(spark)
 
+    # separa válidos/ inválidos
+    valid_df, dlq_df = split_valid_invalid(kafka_df)
+
     logger.info(f"--> Processando dados do tópico: {KAFKA_TOPIC}")
-    processed_df = process_sensor_data(kafka_df)
+    processed_df = process_sensor_data(valid_df)
 
     logger.info("--> Iniciando stream de dados brutos...")
     raw_query = (
@@ -246,6 +359,16 @@ def main():
         .outputMode("append")
         .option("checkpointLocation", f"{CHECKPOINT_DIR}/agg")
         .trigger(processingTime='30 seconds')
+        .start()
+    )
+
+    logger.info("--> Iniciando stream de DLQ...")
+    dlq_query = (
+        dlq_df
+        .writeStream
+        .outputMode("append")
+        .foreachBatch(write_dlq_to_postgres)
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/dlq")
         .start()
     )
 

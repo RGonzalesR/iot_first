@@ -1,7 +1,7 @@
 # tests/test_consumer_aggregations.py
 from datetime import datetime
 
-from pyspark.sql import Row, functions as F, types as T
+from pyspark.sql import Row, functions as f, types as T
 
 import kafka_consumer_spark as kc
 
@@ -37,18 +37,18 @@ def test_create_aggregations_minute_window(spark):
     agg = kc.create_aggregations(df)
 
     out = agg.select(
-        F.col("sensor_id"),
-        F.col("sensor_type"),
-        F.col("location"),
-        F.col("manufacturer"),
-        F.col("window_start"),
-        F.col("window_end"),
-        F.col("avg_value"),
-        F.col("min_value_reading"),
-        F.col("max_value_reading"),
-        F.col("reading_count"),
-        F.col("high_alert_count"),
-        F.col("low_alert_count"),
+        f.col("sensor_id"),
+        f.col("sensor_type"),
+        f.col("location"),
+        f.col("manufacturer"),
+        f.col("window_start"),
+        f.col("window_end"),
+        f.col("avg_value"),
+        f.col("min_value_reading"),
+        f.col("max_value_reading"),
+        f.col("reading_count"),
+        f.col("high_alert_count"),
+        f.col("low_alert_count"),
     ).orderBy("window_start").collect()
 
     # Duas janelas: [12:00–12:01) e [12:01–12:02)
