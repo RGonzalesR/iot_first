@@ -1,6 +1,3 @@
--- init.sql
-CREATE DATABASE iot_db;
-
 \c iot_db;
 
 -- Tabela de leituras brutas processadas
