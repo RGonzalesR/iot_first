@@ -214,12 +214,10 @@ def process_sensor_data(valid_df):
 
     return processed_df
 
-def write_dlq_to_postgres(df, batch_id):
-    """Grava mensagens inválidas na tabela sensor_errors."""
-    if df.rdd.isEmpty():
-        return
+def create_dlq_select(df):
+    """Seleciona colunas necessárias para a tabela sensor_errors."""
 
-    (
+    dlq_df = (
         df.select(
             f.col("raw_value"),
             f.col("error_type"),
@@ -229,16 +227,9 @@ def write_dlq_to_postgres(df, batch_id):
             f.col("offset").alias("kafka_offset"),
             f.to_timestamp("kafka_timestamp").alias("kafka_timestamp"),
         )
-        .write
-        .format("jdbc")
-        .option("url", POSTGRES_URL)
-        .option("dbtable", "sensor_errors")
-        .option("user", POSTGRES_USER)
-        .option("password", POSTGRES_PASSWORD)
-        .option("driver", "org.postgresql.Driver")
-        .mode("append")
-        .save()
     )
+
+    return dlq_df
 
 def create_aggregations(df):
     """Cria agregações por janela de tempo."""
@@ -359,12 +350,16 @@ def main():
     )
 
     logger.info("--> Iniciando stream de DLQ...")
+    final_dlq_df = create_dlq_select(dlq_df)
+
     dlq_query = (
-        dlq_df
+        final_dlq_df
         .writeStream
+        # .foreachBatch(write_dlq_to_postgres)
+        .foreachBatch(write_to_postgres(final_dlq_df, "sensor_errors"))
         .outputMode("append")
-        .foreachBatch(write_dlq_to_postgres)
         .option("checkpointLocation", f"{CHECKPOINT_DIR}/dlq")
+        .trigger(processingTime='10 seconds')
         .start()
     )
 
