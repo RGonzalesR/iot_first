@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir soda-core soda-core-postgres
+
+COPY soda/ ./soda/
+
+# Loop infinito rodando os scans a cada 60 segundos
+CMD ["sh", "-c", "\
+  export POSTGRES_PASSWORD=$(cat /run/secrets/pg_password); \
+  mkdir -p /app/logs; \
+  echo 'Iniciando agente de qualidade (Soda Core)...' | tee -a /app/logs/soda.log; \
+  while true; do \
+    echo '--- Executando scan (sensor_readings)...' | tee -a /app/logs/soda.log; \
+    soda scan -d iot_postgres -c soda/soda_configuration.yml soda/checks/iot_sensor_readings.yml 2>&1 | tee -a /app/logs/soda.log; \
+    echo '--- Executando scan (iot_quality)...' | tee -a /app/logs/soda.log; \
+    soda scan -d iot_postgres -c soda/soda_configuration.yml soda/checks/iot_quality.yml 2>&1 | tee -a /app/logs/soda.log; \
+    echo 'Aguardando 60 segundos...' | tee -a /app/logs/soda.log; \
+    sleep 60; \
+  done \
+"]

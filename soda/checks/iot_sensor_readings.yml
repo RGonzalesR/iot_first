@@ -1,0 +1,54 @@
+checks for sensor_readings:
+  # presença de dados
+  - row_count > 0:
+      name: "Deve haver leituras na tabela sensor_readings"
+
+  # Campos essenciais não nulos
+  - missing_count(sensor_id) = 0:
+      name: "Nenhuma leitura sem sensor_id"
+
+  - missing_count(timestamp) = 0:
+      name: "Nenhuma leitura sem timestamp"
+
+  - missing_count(sensor_type) = 0:
+      name: "Nenhuma leitura sem sensor_type"
+
+  # Valores qualitativos esperados
+  - invalid_count(sensor_type) = 0:
+      name: "Tipos de sensor devem ser válidos"
+      valid values: [temperature, humidity, pressure]
+
+  - invalid_count(status) = 0:
+      name: "Status de sensor deve ser válido"
+      valid values: [active, maintenance]
+
+  - invalid_count(unit) = 0:
+      name: "Unidade correta para temperatura"
+      valid values: [Celsius]
+      filter: sensor_type = 'temperature'
+
+  - invalid_count(unit) = 0:
+      name: "Unidade correta para umidade"
+      valid values: ['%']
+      filter: sensor_type = 'humidity'
+
+  - invalid_count(unit) = 0:
+      name: "Unidade correta para pressão"
+      valid values: [hPa]
+      filter: sensor_type = 'pressure'
+
+  # Normalização deve estar em [0, 1]
+  - min(normalized_value) >= 0:
+      name: "normalized_value mínimo deve ser >= 0"
+
+  - max(normalized_value) <= 1:
+      name: "normalized_value máximo deve ser <= 1"
+
+  # Coerência entre normalized_value e flags
+  - failed rows:
+      name: "high_alert deve ser verdadeiro apenas para normalized_value > 0.9"
+      fail condition: (high_alert = true) and (normalized_value <= 0.9)
+
+  - failed rows:
+      name: "low_alert deve ser verdadeiro apenas para normalized_value < 0.1"
+      fail condition: (low_alert = true) and (normalized_value >= 0.1)

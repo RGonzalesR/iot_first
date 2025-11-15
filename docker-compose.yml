@@ -134,6 +134,22 @@ services:
     command: ["python", "/app/kafka_producer.py"]
     restart: unless-stopped
 
+  soda-core:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.soda
+    container_name: soda-core
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    secrets:
+      - pg_password
+    volumes:
+      - ./volumes/soda/logs:/app/logs
+    restart: unless-stopped
+
 networks:
   default:
     name: iot_first_net

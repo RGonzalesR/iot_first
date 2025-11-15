@@ -92,6 +92,34 @@ FROM sensor_aggregations
 GROUP BY date_trunc('hour', window_start), sensor_type, location
 ORDER BY hour DESC;
 
+-- View de taxa de erros
+CREATE OR REPLACE VIEW dq_error_rate AS
+WITH valid AS (
+    SELECT date_trunc('minute', timestamp) AS minute,
+           COUNT(*) AS total_valid
+    FROM sensor_readings
+    GROUP BY 1
+),
+invalid AS (
+    SELECT date_trunc('minute', created_at) AS minute,
+           COUNT(*) AS total_invalid
+    FROM sensor_errors
+    GROUP BY 1
+)
+SELECT
+    COALESCE(v.minute, i.minute) AS minute,
+    COALESCE(v.total_valid, 0)   AS total_valid,
+    COALESCE(i.total_invalid, 0) AS total_invalid,
+    CASE
+        WHEN COALESCE(v.total_valid, 0) + COALESCE(i.total_invalid, 0) = 0
+            THEN 0
+        ELSE i.total_invalid::float / (v.total_valid + i.total_invalid)
+    END AS pct_invalid
+FROM valid v
+FULL JOIN invalid i
+  ON v.minute = i.minute
+ORDER BY minute DESC;
+
 -- Permissões
 GRANT ALL PRIVILEGES ON DATABASE iot_db TO iot_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO iot_user;

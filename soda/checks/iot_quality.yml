@@ -1,0 +1,30 @@
+checks for dq_error_rate:
+  # Deve haver pelo menos alguma janela calculada (quando o sistema já está rodando)
+  - row_count > 0:
+      name: "Pelo menos uma janela de taxa de erros deve existir"
+      warn: when < 1
+
+  # Taxa de inválidos controlada
+  - max(pct_invalid) <= 0.50:
+      name: "Taxa máxima de leituras inválidas por minuto <= 50%"
+
+checks for sensor_errors:
+  # Toda linha de erro deve ter tipo
+  - missing_count(error_type) = 0:
+      name: "Toda mensagem de erro deve possuir error_type"
+
+  # Domínio de tipos de erro
+  - invalid_count(error_type) = 0:
+      name: "Tipos de erro devem ser conhecidos"
+      valid values:
+        - JSON_PARSE_ERROR
+        - INACTIVE_SENSOR
+        - NULL_VALUE
+        - BELOW_MIN
+        - ABOVE_MAX
+
+  # Volume de erros recente não deve explodir
+  - row_count < 1000:
+      name: "Limite de erros na última hora"
+      filter: created_at > now() - interval '1 hour'
+      warn: when >= 500
