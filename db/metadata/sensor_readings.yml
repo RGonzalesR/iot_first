@@ -1,0 +1,129 @@
+metadata_version: 1.0
+database: iot_db
+schema: public
+
+table:
+  - name: sensor_readings
+    business_name: Leituras de sensores processadas
+    description: >
+      Armazena as leituras válidas de sensores IoT após processamento no Spark,
+      incluindo valor normalizado, flags de alerta e metadados do dispositivo.
+    grain: "1 linha = 1 leitura de um sensor em um timestamp específico"
+    primary_key: id
+    load_pattern: append_only
+    retention_policy: "Sem política de expurgo definida (histórico completo)."
+
+    columns:
+      - name: id
+        data_type: serial
+        nullable: false
+        role: primary_key
+        description: Identificador único da leitura.
+        example: 12345
+
+      - name: timestamp
+        data_type: timestamp
+        nullable: false
+        role: business_timestamp
+        description: Momento em que o sensor gerou a leitura.
+        example: "2025-01-01 12:00:10"
+
+      - name: sensor_id
+        data_type: varchar(100)
+        nullable: false
+        description: Identificador único lógico do sensor.
+        example: "b3a2c524-5c1a-4f6c-ac10-4a3e168df8a2"
+
+      - name: sensor_type
+        data_type: varchar(50)
+        nullable: false
+        description: Tipo de sensor responsável pela leitura (ex. temperatura, umidade, pressão).
+        example: "temperature"
+
+      - name: value
+        data_type: double precision
+        nullable: false
+        description: Valor bruto lido pelo sensor na sua unidade de medida.
+        example: 23.5
+
+      - name: normalized_value
+        data_type: double precision
+        nullable: true
+        description: >
+          Valor normalizado entre 0 e 1, calculado a partir de (value - min_value) / (max_value - min_value),
+          utilizado para comparação de leituras entre sensores diferentes.
+        example: 0.82
+
+      - name: status
+        data_type: varchar(20)
+        nullable: true
+        description: Status operacional do sensor no momento da leitura (ex. active, maintenance).
+        example: "active"
+
+      - name: location
+        data_type: varchar(200)
+        nullable: true
+        description: Localização do sensor (cidade, ambiente, sala, etc.).
+        example: "São Paulo"
+
+      - name: manufacturer
+        data_type: varchar(200)
+        nullable: true
+        description: Fabricante do dispositivo sensor.
+        example: "ACME Sensores Industriais"
+
+      - name: model
+        data_type: varchar(100)
+        nullable: true
+        description: Modelo comercial do sensor.
+        example: "TEMP-123AB"
+
+      - name: unit
+        data_type: varchar(20)
+        nullable: true
+        description: Unidade de medida do valor lido.
+        example: "Celsius"
+
+      - name: high_alert
+        data_type: boolean
+        nullable: true
+        description: >
+          Indica se a leitura está em zona de alto alerta (true quando normalized_value > 0.9).
+        example: true
+
+      - name: low_alert
+        data_type: boolean
+        nullable: true
+        description: >
+          Indica se a leitura está em zona de baixo alerta (true quando normalized_value < 0.1).
+        example: false
+
+      - name: processing_time
+        data_type: timestamp
+        nullable: true
+        description: Momento em que o pipeline de streaming processou e gravou a leitura.
+        example: "2025-01-01 12:00:12"
+
+      - name: created_at
+        data_type: timestamp
+        nullable: true
+        default: "CURRENT_TIMESTAMP"
+        description: Timestamp de criação do registro no banco de dados.
+        example: "2025-01-01 12:00:12"
+
+    indexes:
+      - name: idx_sensor_readings_timestamp
+        columns: [timestamp]
+        description: Otimiza filtros por período de tempo.
+
+      - name: idx_sensor_readings_sensor_id
+        columns: [sensor_id]
+        description: Otimiza buscas por sensor específico.
+
+      - name: idx_sensor_readings_type
+        columns: [sensor_type]
+        description: Otimiza filtros por tipo de sensor.
+
+      - name: idx_sensor_readings_location
+        columns: [location]
+        description: Otimiza filtros por localização.

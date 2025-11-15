@@ -1,0 +1,135 @@
+metadata_version: 1.0
+database: iot_db
+schema: public
+
+table:
+  - name: sensor_aggregations
+    business_name: Agregações de leituras de sensores
+    description: >
+      Armazena métricas agregadas por janelas de tempo (1 minuto) e por sensor,
+      incluindo estatísticas descritivas e contagem de eventos de alerta.
+    grain: "1 linha = 1 janela de tempo de 1 minuto para um sensor específico"
+    primary_key: id
+    unique_keys:
+      - [window_start, window_end, sensor_id]
+    load_pattern: append_only
+    retention_policy: "Sem política de expurgo definida (histórico completo)."
+
+    columns:
+      - name: id
+        data_type: serial
+        nullable: false
+        role: primary_key
+        description: Identificador único da linha de agregação.
+        example: 9876
+
+      - name: window_start
+        data_type: timestamp
+        nullable: false
+        description: Início da janela de agregação (tipicamente múltiplo de 1 minuto).
+        example: "2025-01-01 12:00:00"
+
+      - name: window_end
+        data_type: timestamp
+        nullable: false
+        description: Fim da janela de agregação (exclusivo).
+        example: "2025-01-01 12:01:00"
+
+      - name: sensor_id
+        data_type: varchar(100)
+        nullable: false
+        description: Identificador do sensor ao qual a agregação se refere.
+        example: "b3a2c524-5c1a-4f6c-ac10-4a3e168df8a2"
+
+      - name: sensor_type
+        data_type: varchar(50)
+        nullable: false
+        description: Tipo de sensor (ex. temperature, humidity).
+        example: "temperature"
+
+      - name: location
+        data_type: varchar(200)
+        nullable: true
+        description: Localização do sensor agregada.
+        example: "São Paulo"
+
+      - name: manufacturer
+        data_type: varchar(200)
+        nullable: true
+        description: Fabricante do sensor.
+        example: "ACME Sensores Industriais"
+
+      - name: avg_value
+        data_type: double precision
+        nullable: true
+        description: Valor médio lido pelo sensor na janela.
+        example: 21.7
+
+      - name: min_value_reading
+        data_type: double precision
+        nullable: true
+        description: Menor valor registrado na janela.
+        example: 18.5
+
+      - name: max_value_reading
+        data_type: double precision
+        nullable: true
+        description: Maior valor registrado na janela.
+        example: 25.2
+
+      - name: stddev_value
+        data_type: double precision
+        nullable: true
+        description: Desvio padrão dos valores na janela.
+        example: 1.9
+
+      - name: reading_count
+        data_type: bigint
+        nullable: true
+        description: Número de leituras consideradas na janela.
+        example: 24
+
+      - name: max_normalized
+        data_type: double precision
+        nullable: true
+        description: Maior valor normalizado observado na janela.
+        example: 0.95
+
+      - name: high_alert_count
+        data_type: bigint
+        nullable: true
+        description: Número de leituras marcadas como high_alert na janela.
+        example: 3
+
+      - name: low_alert_count
+        data_type: bigint
+        nullable: true
+        description: Número de leituras marcadas como low_alert na janela.
+        example: 1
+
+      - name: aggregation_time
+        data_type: timestamp
+        nullable: true
+        description: Momento em que a agregação foi calculada pelo pipeline.
+        example: "2025-01-01 12:01:05"
+
+      - name: created_at
+        data_type: timestamp
+        nullable: true
+        default: "CURRENT_TIMESTAMP"
+        description: Timestamp de criação do registro no banco de dados.
+        example: "2025-01-01 12:01:05"
+
+    indexes:
+      - name: idx_sensor_agg_window
+        columns: [window_start, window_end]
+        description: >
+          Otimiza consultas por janelas de tempo em relatórios e dashboards.
+
+      - name: idx_sensor_agg_sensor_id
+        columns: [sensor_id]
+        description: Otimiza buscas por histórico agregado de um sensor.
+
+      - name: idx_sensor_agg_type
+        columns: [sensor_type]
+        description: Otimiza filtros por tipo de sensor em relatórios agregados.

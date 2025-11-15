@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir \
 RUN mkdir -p /app /tmp/spark-checkpoint && \
     chmod -R 777 /tmp/spark-checkpoint
 
+COPY conf/log4j2.properties /opt/spark/conf/log4j2.properties
+
 COPY python/ /app/
 
 WORKDIR /app

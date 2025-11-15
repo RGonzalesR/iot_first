@@ -58,17 +58,24 @@ sensor_schema = StructType([
 # =========================
 def create_spark_session():
     """Cria sessão Spark com configurações otimizadas para versão 3.4.0."""
-    return SparkSession.builder \
-        .appName("IoT-Sensor-Consumer") \
-        .config("spark.jars.packages", 
-                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0,"
-                "org.postgresql:postgresql:42.7.1") \
-        .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_DIR) \
-        .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .config("spark.sql.shuffle.partitions", "10") \
-        .getOrCreate()
+    spark = (
+        SparkSession.builder
+                    .appName("IoT-Sensor-Consumer")
+                    .config("spark.jars.packages", 
+                            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0,"
+                            "org.postgresql:postgresql:42.7.1")
+                    .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_DIR)
+                    .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true")
+                    .config("spark.sql.adaptive.enabled", "true")
+                    .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+                    .config("spark.sql.shuffle.partitions", "10")
+                    .getOrCreate()
+    )
+
+    spark.sparkContext.setLogLevel("ERROR")
+
+    return spark
+        
 
 def read_kafka_stream(spark):
     """Lê stream do Kafka."""

@@ -1,0 +1,76 @@
+metadata_version: 1.0
+database: iot_db
+schema: public
+
+table:
+  - name: sensor_errors
+    business_name: Dead Letter Queue de mensagens inválidas
+    description: >
+      Armazena mensagens rejeitadas pelo processamento de streaming, com o payload
+      original, tipo de erro e metadados de Kafka para investigação e reprocessamento.
+    grain: "1 linha = 1 mensagem inválida recebida do Kafka"
+    primary_key: id
+    load_pattern: append_only
+    retention_policy: >
+      Depende da estratégia de observabilidade e auditoria. Pode ser sujeita a
+      retenção por tempo (ex. 90 dias) em ambientes produtivos.
+
+    columns:
+      - name: id
+        data_type: serial
+        nullable: false
+        role: primary_key
+        description: Identificador único do registro de erro.
+        example: 555
+
+      - name: created_at
+        data_type: timestamp
+        nullable: false
+        default: "NOW()"
+        description: Momento em que o registro foi inserido na DLQ.
+        example: "2025-01-01 12:00:15"
+
+      - name: raw_value
+        data_type: text
+        nullable: false
+        description: Payload original recebido do Kafka (JSON ou string inválida).
+        example: '{"sensor_id": "s-1", "value": 9999, ...}' 
+
+      - name: error_type
+        data_type: text
+        nullable: true
+        description: >
+          Código categórico do erro de validação ou parsing.
+          Exemplos: JSON_PARSE_ERROR, INACTIVE_SENSOR, NULL_VALUE,
+          BELOW_MIN, ABOVE_MAX.
+        example: "JSON_PARSE_ERROR"
+
+      - name: error_message
+        data_type: text
+        nullable: true
+        description: Mensagem descritiva do erro, voltada a análise humana.
+        example: "Falha ao fazer parse do JSON"
+
+      - name: kafka_topic
+        data_type: text
+        nullable: true
+        description: Nome do tópico Kafka de origem da mensagem.
+        example: "iot_sensor_data"
+
+      - name: kafka_partition
+        data_type: int
+        nullable: true
+        description: Partição Kafka de origem da mensagem.
+        example: 0
+
+      - name: kafka_offset
+        data_type: bigint
+        nullable: true
+        description: Offset da mensagem na partição Kafka.
+        example: 123456789
+
+      - name: kafka_timestamp
+        data_type: timestamp
+        nullable: true
+        description: Timestamp de Kafka associado à mensagem no momento da produção.
+        example: "2025-01-01 12:00:11"
