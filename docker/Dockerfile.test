@@ -9,7 +9,7 @@ ENV SPARK_NO_DAEMONIZE=true
 # Instala pytest como root (ok para container de testes)
 USER root
 RUN python3 -m pip install --upgrade pip && \
-    pip3 install --no-cache-dir pytest pyspark==3.4.0
+    pip3 install --no-cache-dir pytest pyspark==3.4.0 pyyaml
 
 WORKDIR /app
 COPY . .
