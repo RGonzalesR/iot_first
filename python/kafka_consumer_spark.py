@@ -128,7 +128,7 @@ def split_valid_invalid(df):
         & f.col("status").isNull()
     )
 
-    # Condição de "válido" (a mesma que você já usa hoje)
+    # Condição de "válido"
     valid_condition = (
         (f.col("status") == "active")
         & (f.col("value").isNotNull())
@@ -169,26 +169,8 @@ def split_valid_invalid(df):
 
 def process_sensor_data(valid_df):
     """Processa e transforma dados dos sensores (somente válidos)."""
-    parsed_filtered_df = (
-        valid_df
-        .select(
-            f.col("sensor_id"),
-            f.col("sensor_type"),
-            f.col("value"),
-            f.col("status"),
-            f.col("location"),
-            f.col("manufacturer"),
-            f.col("model"),
-            f.col("unit"),
-            f.col("min_value"),
-            f.col("max_value"),
-            f.col("timestamp"),
-            f.col("kafka_timestamp"),
-        )
-    )
-
     processed_df = (
-        parsed_filtered_df
+        valid_df
         .select(
             f.col("sensor_id"),
             f.col("sensor_type"),
@@ -355,7 +337,6 @@ def main():
     dlq_query = (
         final_dlq_df
         .writeStream
-        # .foreachBatch(write_dlq_to_postgres)
         .foreachBatch(write_to_postgres(final_dlq_df, "sensor_errors"))
         .outputMode("append")
         .option("checkpointLocation", f"{CHECKPOINT_DIR}/dlq")
