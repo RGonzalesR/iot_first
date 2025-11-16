@@ -43,9 +43,9 @@ A solução utiliza:
       └───────┬───────────────┬────────────┘
               │               │
               ▼               ▼
-   ┌────────────────┐  ┌───────────────────┐
+   ┌─────────────────┐  ┌───────────────────┐
    │ sensor_readings │  │ sensor_errors(DLQ)│
-   └────────────────┘  └───────────────────┘
+   └─────────────────┘  └───────────────────┘
               │
               ▼
    ┌──────────────────────┐
@@ -87,7 +87,7 @@ A solução utiliza:
 
 Este projeto tenta simular os passos de um sistema de deploy seguro, a fim de garantir que todos os componentes estejam saudáveis antes de iniciar o processamento.
 
-### ✔ Ordem de inicialização
+### Ordem de inicialização
 
 1. **tests**  
    - Roda automaticamente usando o container `iot-first-tests`  
@@ -403,7 +403,7 @@ Esse arquivo é montado em `/run/secrets/pg_password`.
 
 ---
 
-# ▶️ Como Executar
+# Como Executar
 
 ## 1. Clonar o projeto
 ```bash
@@ -414,6 +414,20 @@ cd iot_first
 ## 2. Subir a stack
 ```bash
 docker compose up --build
+```
+
+## 3. Acesse os dados:
+```bash
+# Conecte ao PostgreSQL
+docker exec -it postgres psql -U iot_user -d iot_db
+
+# Visualize os últimos dados
+SELECT * FROM latest_sensor_status;
+```
+
+## 4. Para parar os serviços:
+```bash
+docker compose down
 ```
 
 ---
@@ -433,4 +447,3 @@ Este projeto implementa **de ponta a ponta** um pipeline de streaming IoT:
 - Testes automatizados  
 
 Tudo containerizado.
-
